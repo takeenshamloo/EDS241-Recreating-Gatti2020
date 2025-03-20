@@ -1,0 +1,154 @@
+---
+author: "Takeen Shamloo"
+format: html
+editor: visual
+---
+
+# Recreating fixed-effect results for
+
+## *Can Irrigation Infrastructure Mitigate The Effect Of Rainfall Shocks On Conflict? Evidence From Indonesia* 
+
+```{r}
+library(dplyr)
+library(haven) # Load .dta files.
+library(fixest) # For fixed-effects regression.
+library(kableExtra)  # For table formatting 
+library(tidyr)
+
+data_dta <- read_dta("data.dta")
+```
+
+### Data Exploration
+
+```{r}
+# Extract column names and labels
+col_labels <- sapply(data_dta, function(x) attr(x, "label"))
+
+# Define variables
+conflict_vars <- c("resource", "pop_justice", "law_enf", "gov_prog", "separatist", "identity")
+
+# Rename regression terms and table labels
+term_labels <- c(
+  "z_rgrowing_season_cm" = "GS Rainfall",
+  "z_rain_ground_dams_ha" = "GS Rainfall × Irrigation Capacity"
+)
+
+conflict_labels <- c(
+  "gov_prog" = "Government<br>Program",
+  "identity" = "Identity",
+  "law_enf" = "Law<br>Enforcement",
+  "pop_justice" = "Popular<br>Justice",
+  "resource" = "Resource",
+  "separatist" = "Separatist<br>Movement"
+)
+
+# Define function for running fixed-effect regressions
+run_regression <- function(var) {
+  feols(
+    as.formula(paste0(var, " ~ z_rgrowing_season_cm + z_rain_ground_dams_ha + 
+                       z_tgrowing_season + z_temp_ground_dams_ha + 
+                       factor(year) + year:factor(prov) | district_code")),
+    data = data_dta, cluster = ~district_code
+  )
+}
+
+# Run regressions for all conflict types
+models <- lapply(conflict_vars, run_regression)
+
+# Function to extract regression coefficients with significance stars
+extract_coefficients <- function(model) {
+  coefs <- coef(model)
+  std_errors <- sqrt(diag(vcov(model)))
+  p_values <- 2 * (1 - pnorm(abs(coefs / std_errors)))
+
+  data.frame(
+    term = names(coefs),
+    value = paste0(
+      round(coefs, 3),
+      case_when(
+        p_values < 0.01 ~ "***",
+        p_values < 0.05 ~ "**",
+        p_values < 0.1 ~ "*",
+        TRUE ~ ""
+      ), " <br>(", round(std_errors, 3), ")"
+    )
+  )
+}
+
+# Extract results for all models
+results_list <- lapply(models, extract_coefficients)
+
+extract_model_stat <- function(stat_func, name) {
+  data.frame(
+    term = name,
+    matrix(sapply(models, function(x) stat_func(x)), nrow = 1)
+  ) %>%
+  mutate(across(-term, as.character))
+}
+
+# Extract R², number of districts, and observations
+r_squared_df <- extract_model_stat(function(x) round(r2(x, type = "wr2"), 3), "R²")
+num_districts_df <- extract_model_stat(function(x) length(fixef(x)$district_code), "Num. Districts")
+num_obs_df <- extract_model_stat(nobs, "Num. Observations")
+
+# Rename columns using conflict_labels
+rename_cols <- function(df) {
+  colnames(df) <- c("term", conflict_labels[conflict_vars])
+  df
+}
+
+r_squared_df <- rename_cols(r_squared_df)
+num_districts_df <- rename_cols(num_districts_df)
+num_obs_df <- rename_cols(num_obs_df)
+
+# Convert results into a single dataframe
+results_df <- bind_rows(results_list, .id = "Conflict_Type") %>%
+  filter(term %in% names(term_labels)) %>%
+  mutate(term = term_labels[term]) %>%
+  pivot_wider(names_from = "Conflict_Type", values_from = "value") %>%
+  rename_with(~ conflict_labels[conflict_vars], -term)
+
+# Bind R², district counts, and observations to the table
+final_results <- bind_rows(results_df, r_squared_df, num_districts_df, num_obs_df)
+
+# Format table using kable
+final_results %>%
+  kable(
+    format = "html", 
+    caption = "Table 4: Impact of Growing-Season Rainfall on Conflict Subcategories", 
+    col.names = c("Variable", conflict_labels[conflict_vars]), 
+    escape = FALSE
+  ) %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+```{r}
+# Load libraries
+library(fixest)
+library(dplyr)
+library(interactions)
+library(ggplot2)
+
+# Extract model components manually
+model <- models[[1]]
+
+# Create a dataframe with observed values and predictions
+pred_data <- data_dta %>%
+  mutate(predicted = predict(model, newdata = data_dta))
+
+# Ensure the variables used in the interaction exist
+pred_data <- pred_data %>%
+  select(z_rgrowing_season_cm, z_rain_ground_dams_ha, predicted)
+
+# Convert to a pseudo-lm object
+model_lm <- lm(predicted ~ z_rgrowing_season_cm * z_rain_ground_dams_ha, data = pred_data)
+
+# Now we can use interact_plot()
+interact_plot(model_lm, 
+              pred = z_rgrowing_season_cm, 
+              modx = z_rain_ground_dams_ha, 
+              interval = TRUE,
+              main.title = "Rainfall & Irrigation on Resource Conflict",
+              x.label = "Growing-Season Rainfall",
+              y.label = "Predicted Conflict Incidents",
+              legend.main = "Irrigation Capacity")
+```
