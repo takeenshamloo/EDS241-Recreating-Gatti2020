@@ -167,7 +167,7 @@ data_dta <- data_dta %>%
 ### Setting up our Fixed-Effects Regression by Conflict Type
 
 To recreate out table from our model its important to try and take a look at the
-state code they used to build theirs. 
+Stata code they used to build theirs. 
 
 Their table code looking something like this:
 
@@ -365,6 +365,17 @@ final_results %>%
   ) %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped"))
 ```
+
+We can see that Rainfall is generally reducing our conflict types with the 
+exception of Separatist and Identity Conflicts
+
+Based on our second variable we can see that Irrigation capacity makes rainfall 
+more likely to effect the following conflicts: Resource, Popular Justice, and 
+Law Enforcement but mitigates our other 3.
+
+We can see that rainfall, irrigation, and their interaction explain a meaningful
+part of the variation in conflict incidents of around 20% with the exception of 
+Identity Conflicts at 9%.
 
 ### Checking out the interactions plot
 
